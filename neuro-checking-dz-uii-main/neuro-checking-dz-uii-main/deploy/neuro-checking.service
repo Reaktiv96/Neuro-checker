@@ -1,0 +1,21 @@
+[Unit]
+Description=Neuro Checking - DZ UII
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/neuro-checking
+EnvironmentFile=/var/www/neuro-checking/.env
+ExecStart=/var/www/neuro-checking/.venv/bin/gunicorn \
+    --workers 2 \
+    --bind 127.0.0.1:5001 \
+    --timeout 120 \
+    --access-logfile /var/www/neuro-checking/backend/logs/access.log \
+    --error-logfile /var/www/neuro-checking/backend/logs/error.log \
+    "backend.app:app"
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

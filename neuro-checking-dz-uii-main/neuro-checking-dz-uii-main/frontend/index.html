@@ -1,0 +1,2302 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Neuro Checking — Dev Tool</title>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #222536;
+      --border: #2e3148;
+      --accent: #6366f1;
+      --accent2: #22d3ee;
+      --ok: #22c55e;
+      --warn: #f59e0b;
+      --err: #ef4444;
+      --text: #e2e8f0;
+      --muted: #64748b;
+      --radius: 10px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; min-height: 100vh; }
+
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 28px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    header h1 { font-size: 18px; font-weight: 700; }
+    header span { color: var(--muted); font-size: 13px; }
+    .badge { background: var(--accent); color: #fff; font-size: 11px; padding: 2px 8px; border-radius: 20px; font-weight: 600; }
+
+    .tabs {
+      display: flex;
+      gap: 4px;
+      padding: 16px 28px 0;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .tab {
+      padding: 9px 18px;
+      border-radius: var(--radius) var(--radius) 0 0;
+      cursor: pointer;
+      font-size: 14px;
+      color: var(--muted);
+      border: 1px solid transparent;
+      border-bottom: none;
+      transition: all .15s;
+    }
+    .tab:hover { color: var(--text); }
+    .tab.active { background: var(--bg); border-color: var(--border); color: var(--text); font-weight: 600; }
+
+    .page { display: none; padding: 24px 28px; max-width: 1200px; margin: 0 auto; }
+    .page.active { display: block; }
+
+    .run-page { max-width: 100%; }
+    #tab-logs > .card,
+    #tab-prompts > .card {
+      max-width: 1240px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .run-layout {
+      display: grid;
+      grid-template-columns: 300px minmax(0, 1fr);
+      gap: 16px;
+      align-items: start;
+    }
+    .run-sidebar {
+      position: sticky;
+      top: 16px;
+    }
+    .run-main { min-width: 0; }
+    .case-item.active-run {
+      border-color: var(--accent2);
+      box-shadow: inset 0 0 0 1px rgba(34, 211, 238, .25);
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .card h3 { font-size: 14px; font-weight: 600; margin-bottom: 14px; color: var(--accent2); }
+
+    label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px; }
+    input[type=text], input[type=password], input[type=number], textarea, select {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      color: var(--text);
+      padding: 9px 12px;
+      font-size: 14px;
+      outline: none;
+      transition: border-color .15s;
+      font-family: inherit;
+    }
+    input:focus, textarea:focus, select:focus { border-color: var(--accent); }
+    textarea { resize: vertical; min-height: 90px; }
+    input[type=number] { width: 90px; }
+
+    .row { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; }
+    .col { flex: 1; min-width: 140px; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 9px 20px;
+      border-radius: 8px;
+      border: none;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity .15s, transform .1s;
+    }
+    .btn:active { transform: scale(.97); }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+    .btn-ok { background: var(--ok); color: #fff; }
+    .btn-warn { background: var(--warn); color: #000; }
+
+    .status-bar {
+      font-size: 13px;
+      padding: 9px 14px;
+      border-radius: 8px;
+      margin-top: 12px;
+      display: none;
+    }
+    .status-bar.info { background: #1e3a5f; color: #93c5fd; display: block; }
+    .status-bar.ok { background: #14532d; color: #86efac; display: block; }
+    .status-bar.err { background: #450a0a; color: #fca5a5; display: block; }
+    .status-bar.loading { background: #312e81; color: #c7d2fe; display: block; }
+
+    pre.code-block {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+      overflow-x: auto;
+      font-family: 'Menlo', 'Consolas', monospace;
+      font-size: 12px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    .precheck-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .precheck-item {
+      background: var(--surface2);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 13px;
+    }
+    .precheck-item .key { color: var(--muted); font-size: 11px; }
+    .precheck-item .val { font-weight: 700; margin-top: 3px; }
+    .ok-val { color: var(--ok); }
+    .warn-val { color: var(--warn); }
+    .err-val { color: var(--err); }
+
+    .case-list { display: flex; flex-direction: column; gap: 10px; }
+    .case-item {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      overflow: hidden;
+    }
+    .case-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .case-header:hover { background: rgba(255,255,255,.03); }
+    .case-type-badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 9px;
+      border-radius: 20px;
+    }
+    .type-perfect_etalon, .type-perfect_alternative { background: #134e21; color: #86efac; }
+    .type-syntax_error { background: #450a0a; color: #fca5a5; }
+    .type-logical_error { background: #422006; color: #fde68a; }
+    .type-non_optimal { background: #172554; color: #bfdbfe; }
+    .type-partial { background: #2e1065; color: #e9d5ff; }
+    .type-cheating { background: #1c1917; color: #d6d3d1; }
+    .case-summary { font-size: 13px; color: var(--muted); flex: 1; }
+    .case-expected { font-size: 12px; color: var(--muted); }
+    .case-score {
+      font-size: 15px;
+      font-weight: 700;
+      min-width: 32px;
+      text-align: right;
+    }
+    .case-body { padding: 0 14px 14px; display: none; }
+    .case-body.open { display: block; }
+
+    /* Segmented assignment-type toggle */
+    .atype-toggle {
+      display: inline-flex;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 3px;
+      gap: 2px;
+    }
+    .atype-toggle input[type=radio] { display: none; }
+    .atype-toggle label {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 5px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      color: var(--muted);
+      margin: 0;
+      transition: background .15s, color .15s;
+      user-select: none;
+    }
+    .atype-toggle input[type=radio]:checked + label {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .run-input-row {
+      display: grid;
+      grid-template-columns: minmax(0, 2.2fr) minmax(0, 1.1fr) auto;
+      gap: 12px;
+      align-items: end;
+    }
+    .run-input-row .field {
+      min-width: 0;
+    }
+    .run-input-row .field label {
+      display: none;
+    }
+    .run-input-row .btn {
+      white-space: nowrap;
+      min-width: 140px;
+      width: 100%;
+      align-self: stretch;
+    }
+
+    .inline-status-row {
+      margin-top: 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .inline-status-row .status-bar {
+      margin-top: 0;
+      flex: 1;
+      min-width: 260px;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface2);
+    }
+    .cases-table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 920px;
+    }
+    .cases-table th,
+    .cases-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+      text-align: left;
+      font-size: 13px;
+    }
+    .cases-table th {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: lowercase;
+      letter-spacing: .02em;
+      background: rgba(255,255,255,.02);
+    }
+    .cases-table tr:last-child td { border-bottom: none; }
+    .summary-cell {
+      font-size: 12px;
+      color: #cbd5e1;
+      line-height: 1.35;
+      max-width: 640px;
+    }
+    .cell-muted { color: var(--muted); }
+    .mini-btn {
+      padding: 5px 10px;
+      font-size: 12px;
+      border-radius: 7px;
+      min-width: 84px;
+      justify-content: center;
+    }
+    .icon-btn {
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      padding: 2px 4px;
+      border-radius: 5px;
+      opacity: .7;
+      transition: opacity .15s;
+      vertical-align: middle;
+    }
+    .icon-btn:hover { opacity: 1; }
+    .cases-footer {
+      margin-top: 12px;
+    }
+    .cases-footer .controls {
+      display: flex;
+      align-items: flex-end;
+      gap: 10px;
+      flex-wrap: nowrap;
+    }
+    .cases-footer .controls .field {
+      min-width: 280px;
+      flex: 1;
+    }
+
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(3, 7, 18, .72);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      z-index: 9999;
+    }
+    body.modal-open { overflow: hidden; }
+    .modal {
+      width: min(1100px, 100%);
+      max-height: min(85vh, 900px);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: 0 20px 80px rgba(0,0,0,.45);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .modal-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--border);
+    }
+    .modal-head h3 { margin: 0; }
+    .modal-body {
+      padding: 16px 18px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: 'Menlo', 'Consolas', monospace;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .score-match { color: var(--ok); }
+    .score-miss { color: var(--err); }
+    .score-na { color: var(--muted); }
+
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .logs-layout {
+      display: grid;
+      grid-template-columns: 220px minmax(0, 1fr);
+      gap: 16px;
+      max-width: 1240px;
+      margin: 0 auto;
+      align-items: stretch;
+    }
+    .logs-layout .card:first-child { max-height: 75vh; overflow-y: auto; }
+    .logs-layout .card:last-child { display: flex; flex-direction: column; }
+    .logs-layout #logs-content { flex: 1; min-height: 400px; }
+    .logs-item-run-title { font-size: 11px; color: var(--muted); margin-top: 8px; font-family: Menlo, Consolas, monospace; }
+    @media (max-width: 960px) {
+      .run-layout { grid-template-columns: 1fr; }
+      .run-sidebar { position: static; }
+      .run-input-row {
+        grid-template-columns: 1fr;
+      }
+      .cases-footer .controls {
+        flex-wrap: wrap;
+      }
+      .cases-footer .controls .field {
+        min-width: 100%;
+      }
+      .logs-layout { grid-template-columns: 1fr; }
+      .logs-layout .card:first-child { max-height: 300px; }
+    }
+    @media (max-width: 700px) { .two-col { grid-template-columns: 1fr; } }
+
+    .spinner {
+      display: inline-block;
+      width: 16px; height: 16px;
+      border: 2px solid currentColor;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .section-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      margin: 14px 0 8px;
+    }
+
+    .readonly-log {
+      width: 100%;
+      min-height: 280px;
+      resize: vertical;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+      color: var(--text);
+      font-family: 'Menlo', 'Consolas', monospace;
+      font-size: 12px;
+      line-height: 1.6;
+      white-space: pre;
+      overflow-x: auto;
+    }
+    .logs-layout .readonly-log {
+      min-height: auto;
+      resize: none;
+      border: none;
+      border-radius: 0;
+      padding: 0;
+    }
+
+    /* Prompts page */
+    .prompts-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1040px);
+      justify-content: center;
+      gap: 20px;
+      padding: 24px 0;
+      max-width: 1240px;
+      margin: 0 auto;
+    }
+    .prompt-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+    }
+    .prompt-card h4 {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--accent2);
+      margin-bottom: 6px;
+    }
+    .prompt-card .prompt-type {
+      font-size: 11px;
+      color: var(--muted);
+      background: var(--surface2);
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 4px;
+      margin-bottom: 8px;
+      width: fit-content;
+    }
+    .prompt-card .prompt-desc {
+      font-size: 12px;
+      color: #cbd5e1;
+      line-height: 1.4;
+      margin-bottom: 12px;
+    }
+    .prompt-card .prompt-content {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px;
+      font-family: 'Menlo', 'Consolas', monospace;
+      font-size: 11px;
+      color: #cbd5e1;
+      line-height: 1.5;
+      max-height: 240px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      margin-bottom: 10px;
+      width: 100%;
+    }
+    .prompt-card .prompt-copy-btn {
+      align-self: flex-start;
+      font-size: 12px;
+    }
+
+    .error-types-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1040px);
+      justify-content: center;
+      gap: 12px;
+      padding: 0;
+      width: 100%;
+    }
+    .error-type-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px;
+    }
+    .error-type-card .type-name {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 4px;
+    }
+    .error-type-card .type-desc {
+      font-size: 12px;
+      color: #cbd5e1;
+      line-height: 1.3;
+    }
+
+    /* Error type checkboxes */
+    .types-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+    .type-toggle {
+      display: flex; align-items: center; gap: 6px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 6px 12px;
+      cursor: pointer;
+      font-size: 13px;
+      transition: border-color .15s;
+    }
+    .type-toggle input { accent-color: var(--accent); }
+    .type-toggle:hover { border-color: var(--accent); }
+
+    .auth-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 11000;
+      background: radial-gradient(circle at 20% 20%, rgba(99, 102, 241, .22), transparent 45%),
+                  radial-gradient(circle at 80% 70%, rgba(34, 211, 238, .18), transparent 42%),
+                  rgba(3, 7, 18, .96);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .auth-overlay.show { display: flex; }
+    .auth-card {
+      width: min(440px, 100%);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 22px;
+      box-shadow: 0 20px 70px rgba(0, 0, 0, .5);
+    }
+    .auth-title { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
+    .auth-subtitle { font-size: 13px; color: var(--muted); margin-bottom: 14px; }
+    .auth-actions { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+    .auth-actions .btn { min-width: 130px; justify-content: center; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>⚡ Neuro Checking</h1>
+  <span>Dev Tool</span>
+  <span class="badge">v0.1</span>
+  <span id="auth-user" style="font-size:12px;color:var(--accent2);display:none"></span>
+  <button class="btn btn-secondary mini-btn" id="logout-btn" onclick="logoutUser()" style="display:none">Выйти</button>
+  <span id="health-badge" style="margin-left:auto;font-size:12px;color:var(--muted)">● checking...</span>
+</header>
+
+<div id="auth-overlay" class="auth-overlay show">
+  <div class="auth-card">
+    <div class="auth-title">Вход в Neuro Checking</div>
+    <div style="margin-bottom:10px">
+      <label>Email</label>
+      <input type="text" id="auth-email" value="artem.kashtalap@gmail.com" autocomplete="username" />
+    </div>
+    <div>
+      <label>Пароль</label>
+      <input type="password" id="auth-password" placeholder="Введите пароль" autocomplete="current-password" />
+    </div>
+    <div class="auth-actions">
+      <button class="btn btn-primary" id="auth-login-btn" onclick="loginUser()">Войти</button>
+      <div id="auth-status" class="status-bar" style="flex:1;margin-top:0"></div>
+    </div>
+  </div>
+</div>
+
+<div class="tabs">
+  <div class="tab active" data-tab="run" onclick="switchTab('run')">Запуск</div>
+  <div class="tab" data-tab="logs" onclick="switchTab('logs')">Логи</div>
+  <div class="tab" data-tab="prompts" onclick="switchTab('prompts')">Промпты</div>
+</div>
+
+<div id="tab-run" class="page run-page active">
+  <div class="run-layout">
+    <aside class="run-sidebar">
+      <div class="card">
+        <h3>Запуски</h3>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:10px">
+          Новый запуск создаётся при считывании эталона.
+        </p>
+        <div id="runs-status" class="status-bar"></div>
+        <div id="runs-list" class="case-list"></div>
+      </div>
+    </aside>
+
+    <section class="run-main">
+      <div class="card">
+        <h3>Эталон</h3>
+        <div class="run-input-row">
+          <div class="field">
+            <input type="text" id="fetch-url" placeholder="https://colab.research.google.com/drive/..." />
+          </div>
+          <div class="field">
+            <input type="text" id="run-note" placeholder="Название запуска" />
+          </div>
+          <button class="btn btn-primary" id="fetch-btn" onclick="fetchColab()">Запустить</button>
+        </div>
+        <div class="inline-status-row">
+          <button class="btn btn-secondary mini-btn" id="fetch-details-btn" onclick="openFetchCodeModal()" style="display:none">Код</button>
+          <button class="btn btn-secondary mini-btn" id="fetch-results-btn" onclick="openFetchResultsModal()" style="display:none">Результаты</button>
+          <button class="btn btn-ok mini-btn" id="fetch-check-btn" onclick="handleFetchCheckButtonClick()" style="display:none">Проверить</button>
+          <div id="fetch-status" class="status-bar"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Параметры генерации</h3>
+        <div style="margin-bottom:12px">
+          <label>Тема задания</label>
+          <input type="text" id="gen-tema" placeholder="Pandas — работа с DataFrame" />
+        </div>
+        <div style="margin-bottom:14px;display:flex;align-items:center;gap:12px">
+          <span style="font-size:13px;color:var(--muted)">Тип задания</span>
+          <div class="atype-toggle">
+            <input type="radio" name="assignment-type" id="atype-code" value="code" checked />
+            <label for="atype-code">⌨ Код</label>
+            <input type="radio" name="assignment-type" id="atype-text" value="text" />
+            <label for="atype-text">✍ Текст</label>
+          </div>
+        </div>
+        <div style="margin-bottom:12px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+            <label style="margin-bottom:0">Текст задания</label>
+            <button class="btn btn-secondary mini-btn" onclick="addZadanieField()" title="Добавить ещё один текст задания">+</button>
+          </div>
+          <div id="zadanie-fields">
+            <textarea id="gen-zadanie" rows="4" placeholder="Написать код, который..." data-zadanie-idx="0"></textarea>
+          </div>
+        </div>
+        <div class="row" style="margin-bottom:14px">
+          <div>
+            <label>Корректных вариантов</label>
+            <input type="number" id="gen-correct" value="1" min="0" max="5" />
+          </div>
+          <div>
+            <label>Некорректных вариантов</label>
+            <input type="number" id="gen-incorrect" value="2" min="0" max="10" />
+          </div>
+          <div class="col">
+            <label>Модель</label>
+            <select id="gen-model">
+              <option value="gpt-4o">gpt-4o</option>
+              <option value="gpt-4o-mini">gpt-4o-mini</option>
+              <option value="gpt-4-turbo">gpt-4-turbo</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <div class="section-title">Типы ошибок (порядок для некорректных)</div>
+          <div class="types-grid" id="error-types">
+            <label class="type-toggle"><input type="checkbox" value="syntax_error" checked> syntax_error</label>
+            <label class="type-toggle"><input type="checkbox" value="logical_error" checked> logical_error</label>
+            <label class="type-toggle"><input type="checkbox" value="non_optimal" checked> non_optimal</label>
+            <label class="type-toggle"><input type="checkbox" value="partial" checked> partial</label>
+            <label class="type-toggle"><input type="checkbox" value="cheating" checked> cheating</label>
+          </div>
+        </div>
+
+        <div class="inline-status-row" style="margin-top:16px">
+          <button class="btn btn-primary" id="gen-btn" onclick="generateCases()" disabled>
+            <span>Сгенерировать варианты</span>
+          </button>
+          <button class="btn btn-ok" id="gen-and-check-btn" onclick="generateAndCheck()" disabled>
+            <span>Сгенерировать и проверить</span>
+          </button>
+          <div id="gen-status" class="status-bar"></div>
+        </div>
+      </div>
+
+      <div id="gen-result">
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+            <h3 style="margin-bottom:0">Сгенерированные кейсы (<span id="gen-count">0</span>)</h3>
+            <button class="btn btn-secondary mini-btn" onclick="addCustomCaseRow()">Добавить</button>
+          </div>
+          <div class="table-wrap">
+            <table class="cases-table">
+              <thead>
+                <tr>
+                  <th>type</th>
+                  <th>summary</th>
+                  <th>plan</th>
+                  <th>fact</th>
+                  <th>code</th>
+                  <th>check</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="gen-cases-tbody"></tbody>
+            </table>
+          </div>
+          <div class="cases-footer">
+            <div class="controls">
+              <div class="field">
+                <label>Модель</label>
+                <select id="batch-model">
+                  <option value="gpt-4o">gpt-4o</option>
+                  <option value="gpt-4o-mini">gpt-4o-mini</option>
+                </select>
+              </div>
+              <button class="btn btn-ok" onclick="checkRemainingCases()" id="batch-btn" disabled>Проверить все</button>
+              <button class="btn btn-secondary" onclick="downloadXls()" id="xls-btn" disabled>Скачать XLS</button>
+            </div>
+            <div id="batch-status" class="status-bar" style="margin-top:0"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- ====================== TAB 5: LOGS ====================== -->
+<div id="tab-logs" class="page">
+  <div class="card">
+    <h3>Логи генерации</h3>
+    <div class="row" style="margin-bottom:12px">
+      <div class="col">
+        <label>Generation ID</label>
+        <input type="text" id="logs-gen-id" placeholder="вставьте generation_id" />
+      </div>
+      <div>
+        <button class="btn btn-primary" onclick="loadGenerationLog()">Загрузить лог</button>
+      </div>
+      <div>
+        <button class="btn btn-secondary" onclick="refreshGenerationLogs()">Обновить список</button>
+      </div>
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px">
+      Последний generation_id: <span id="last-generation-id">—</span>
+    </div>
+    <div id="logs-status" class="status-bar"></div>
+  </div>
+
+  <div class="logs-layout">
+    <div class="card">
+      <h3 style="font-size:13px;margin-bottom:8px">Запуски</h3>
+      <div id="logs-runs-list" style="font-size:12px"></div>
+    </div>
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <h3 style="margin-bottom:0">Содержимое лога</h3>
+        <button class="btn btn-secondary mini-btn" id="copy-log-btn" onclick="copyLogContent()" style="display:none">Копировать</button>
+      </div>
+      <textarea id="logs-content" class="readonly-log" readonly></textarea>
+    </div>
+  </div>
+</div>
+
+<!-- ====================== TAB 3: PROMPTS ====================== -->
+<div id="tab-prompts" class="page">
+  <div class="card">
+    <h3>Системные промпты</h3>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:14px">
+      Все используемые в системе промпты для LLM. Используются для проверки, генерации корректных вариантов и ошибочных кейсов.
+    </p>
+    <div id="prompts-status" class="status-bar"></div>
+  </div>
+
+  <div id="prompts-content" style="display:none">
+    <div id="prompts-system"></div>
+    <div id="prompts-error-types" style="margin-top:32px"></div>
+  </div>
+
+  <div class="prompts-grid" id="prompts-grid"></div>
+</div>
+
+<div id="modal-overlay" class="modal-overlay" onclick="closeModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-head">
+      <h3 id="modal-title">Подробнее</h3>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn btn-secondary mini-btn" id="modal-copy-btn" onclick="copyModalContent()" style="display:none">Копировать</button>
+        <button class="btn btn-secondary mini-btn" onclick="closeModal()">Закрыть</button>
+      </div>
+    </div>
+    <div id="modal-body" class="modal-body"></div>
+  </div>
+</div>
+
+<!-- Regenerate case form overlay -->
+<div id="regen-overlay" class="modal-overlay" onclick="closeRegenForm(event)" style="display:none">
+  <div class="modal" style="max-width:520px" onclick="event.stopPropagation()">
+    <div class="modal-head">
+      <h3 id="regen-title">Перегенерировать кейс</h3>
+      <button class="btn btn-secondary mini-btn" onclick="closeRegenForm()">Отмена</button>
+    </div>
+    <div style="padding:16px 18px 18px">
+      <label style="display:block;margin-bottom:6px;font-size:13px;color:var(--text-secondary)">Новое описание ошибки / изменения:</label>
+      <textarea id="regen-desc" rows="4" style="width:100%;box-sizing:border-box;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:8px 10px;font-size:13px;resize:vertical" placeholder="Опишите конкретно, какую ошибку или изменение нужно внести в код..."></textarea>
+      <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end">
+        <button class="btn btn-secondary mini-btn" onclick="closeRegenForm()">Отмена</button>
+        <button class="btn btn-ok mini-btn" id="regen-submit-btn" onclick="submitRegenerate()">Сгенерировать</button>
+      </div>
+      <div id="regen-status" style="margin-top:8px;font-size:12px;min-height:16px"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '';  // same origin
+const RUNS_LIMIT = 20;
+let runsCache = [];
+let generatedCases = [];
+let generatedZadanie = '';
+let generatedZadanies = [];
+let generatedTema = '';
+let lastFetchData = null;
+let lastGenerateData = null;
+let lastBatchData = null;
+let lastEtalonCheck = null;
+let activeRunId = null;
+let canGenerate = false;
+let canCheck = false;
+let modalCopyText = '';
+
+function getAssignmentType() {
+  const el = document.querySelector('input[name="assignment-type"]:checked');
+  return el ? el.value : 'code';
+}
+let rublesInDollar = 0;
+let isAuthenticated = false;
+
+const GEN_DEFAULTS = {
+  url: 'https://colab.research.google.com/drive/1UPWBdOKUTudjB4P_LMwjSuKEq9gMPYln?usp=sharing',
+  tema: 'Tg-бот и back на GPT: создание рабочего прототипа',
+  zadanie: [
+    'Создать обработчик Телеграм-бота с функционалом:',
+    '- собирает информацию о пользователе для построения дальнейшего общения (имя, язык общения, предпочтения по общению)',
+    '- хранение собранного профиля и использование его при подготовке ответа на вопрос пользователя',
+    '- ответы на вопросы пользователя с помощью LLM',
+    '- использует базу знаний компании при подготовке ответов',
+  ].join('\n'),
+};
+
+// ── multi-zadanie helpers ─────────────────────────────────────────────────
+function getZadanieValues() {
+  return Array.from(document.querySelectorAll('#zadanie-fields textarea'))
+    .map(el => el.value.trim())
+    .filter(Boolean);
+}
+
+function setZadanieValues(values) {
+  const container = document.getElementById('zadanie-fields');
+  container.innerHTML = '';
+  const arr = Array.isArray(values) && values.length ? values : [''];
+  arr.forEach((val, idx) => {
+    container.appendChild(_makeZadanieTextarea(idx, val));
+  });
+  _syncZadanieLocalStorage();
+}
+
+function _makeZadanieTextarea(idx, value = '') {
+  const wrapper = document.createElement('div');
+  wrapper.style.cssText = 'position:relative;margin-bottom:6px';
+  const ta = document.createElement('textarea');
+  ta.id = idx === 0 ? 'gen-zadanie' : `gen-zadanie-${idx}`;
+  ta.rows = 4;
+  ta.placeholder = 'Написать код, который...';
+  ta.dataset.zadanieIdx = idx;
+  ta.value = value;
+  ta.addEventListener('input', _syncZadanieLocalStorage);
+  if (idx > 0) {
+    const rm = document.createElement('button');
+    rm.type = 'button';
+    rm.className = 'btn btn-secondary mini-btn';
+    rm.style.cssText = 'position:absolute;top:4px;right:4px;font-size:11px;padding:2px 7px';
+    rm.textContent = '✕';
+    rm.title = 'Удалить';
+    rm.onclick = () => { wrapper.remove(); _syncZadanieLocalStorage(); };
+    wrapper.appendChild(rm);
+  }
+  wrapper.appendChild(ta);
+  return wrapper;
+}
+
+function addZadanieField() {
+  const container = document.getElementById('zadanie-fields');
+  const idx = container.querySelectorAll('textarea').length;
+  container.appendChild(_makeZadanieTextarea(idx));
+}
+
+function _syncZadanieLocalStorage() {
+  const vals = Array.from(document.querySelectorAll('#zadanie-fields textarea')).map(el => el.value);
+  localStorage.setItem('gen:zadanie_list', JSON.stringify(vals));
+  // keep legacy key in sync with first field
+  localStorage.setItem('gen:zadanie', vals[0] || '');
+}
+
+// ── custom case (Добавить) ────────────────────────────────────────────────
+let _customCaseCounter = 0;
+
+function addCustomCaseRow() {
+  const id = ++_customCaseCounter;
+  const tbody = document.getElementById('gen-cases-tbody');
+  const tr = document.createElement('tr');
+  tr.id = `custom-case-row-${id}`;
+  tr.innerHTML = `
+    <td><span class="case-type-badge type-custom">custom</span></td>
+    <td class="summary-cell" colspan="4">
+      <input type="text" placeholder="https://colab.research.google.com/drive/..." style="width:100%;font-size:12px" id="custom-url-${id}" />
+    </td>
+    <td colspan="2">
+      <button class="btn btn-primary mini-btn" onclick="loadCustomCase(${id})">Загрузить</button>
+    </td>
+    <td><button class="btn btn-secondary mini-btn" onclick="document.getElementById('custom-case-row-${id}').remove()">✕</button></td>
+  `;
+  tbody.appendChild(tr);
+}
+
+async function loadCustomCase(id) {
+  const urlEl = document.getElementById(`custom-url-${id}`);
+  const url = urlEl ? urlEl.value.trim() : '';
+  if (!url) { alert('Введите ссылку на Colab'); return; }
+
+  const row = document.getElementById(`custom-case-row-${id}`);
+  row.cells[1].innerHTML = '<span class="cell-muted" style="font-size:12px">⏳ Загружаю...</span>';
+  try {
+    const data = await apiPost('/api/fetch-colab', { url });
+    const code = data.parsed?.executable_code || '';
+    if (!code) throw new Error('Не удалось извлечь код из Colab');
+
+    const index = generatedCases.length;
+    const newCase = {
+      type: 'custom',
+      expected_grade: null,
+      change_summary: url,
+      student_code: code,
+      row_index: index,
+      checked: false,
+      evaluation: null,
+      curator_text: '',
+      cost_rub: 0,
+      cost_usd: 0,
+      _custom_colab_data: data,
+    };
+    generatedCases.push(newCase);
+    document.getElementById('gen-count').textContent = generatedCases.length;
+    renderCasesTable();
+    updateBatchControls();
+  } catch (e) {
+    row.cells[1].innerHTML = `<span style="color:var(--err);font-size:12px">✗ ${escHtml(e.message)}</span>`;
+  }
+}
+
+function initGenerationForm() {
+  const urlEl = document.getElementById('fetch-url');
+  const temaEl = document.getElementById('gen-tema');
+  const runNoteEl = document.getElementById('run-note');
+
+  const savedUrl = localStorage.getItem('gen:url');
+  const savedTema = localStorage.getItem('gen:tema');
+  const savedZadanieList = localStorage.getItem('gen:zadanie_list');
+  const savedZadanie = localStorage.getItem('gen:zadanie');
+
+  urlEl.value = savedUrl || GEN_DEFAULTS.url;
+  temaEl.value = savedTema || GEN_DEFAULTS.tema;
+
+  // Restore multi-zadanie or fall back to legacy single value
+  if (savedZadanieList) {
+    try {
+      const arr = JSON.parse(savedZadanieList);
+      if (Array.isArray(arr) && arr.length) {
+        setZadanieValues(arr);
+      }
+    } catch (_) {}
+  } else if (savedZadanie) {
+    document.getElementById('gen-zadanie').value = savedZadanie;
+  } else {
+    document.getElementById('gen-zadanie').value = GEN_DEFAULTS.zadanie;
+  }
+  // attach save handlers for static fields
+  document.getElementById('gen-zadanie').addEventListener('input', _syncZadanieLocalStorage);
+
+  urlEl.addEventListener('input', () => localStorage.setItem('gen:url', urlEl.value));
+  temaEl.addEventListener('input', () => localStorage.setItem('gen:tema', temaEl.value));
+
+  // Restore assignment type
+  const savedAtype = localStorage.getItem('gen:assignment_type');
+  if (savedAtype === 'text') {
+    const el = document.getElementById('atype-text');
+    if (el) el.checked = true;
+  }
+  document.querySelectorAll('input[name="assignment-type"]').forEach(el => {
+    el.addEventListener('change', () => localStorage.setItem('gen:assignment_type', getAssignmentType()));
+  });
+
+  runNoteEl.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      fetchColab();
+    }
+  });
+}
+
+// ── utils ─────────────────────────────────────────────────────────────────
+function setStatus(id, msg, type = 'info') {
+  const el = document.getElementById(id);
+  el.textContent = msg;
+  el.className = 'status-bar ' + type;
+}
+function clearStatus(id) {
+  document.getElementById(id).className = 'status-bar';
+}
+
+function setAuthState(authenticated, email = '') {
+  isAuthenticated = authenticated;
+  const overlay = document.getElementById('auth-overlay');
+  const userEl = document.getElementById('auth-user');
+  const logoutBtn = document.getElementById('logout-btn');
+
+  if (authenticated) {
+    overlay.classList.remove('show');
+    userEl.style.display = 'inline';
+    userEl.textContent = email || '';
+    logoutBtn.style.display = 'inline-flex';
+  } else {
+    overlay.classList.add('show');
+    userEl.style.display = 'none';
+    userEl.textContent = '';
+    logoutBtn.style.display = 'none';
+  }
+}
+
+function handleAuthError(responseStatus) {
+  if (responseStatus === 401) {
+    setAuthState(false);
+    setStatus('auth-status', 'Сессия истекла. Войдите снова.', 'err');
+  }
+}
+
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach((t) => {
+    t.classList.toggle('active', t.dataset.tab === name);
+  });
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  
+  // Load prompts when switching to prompts tab
+  if (name === 'prompts') {
+    loadPrompts();
+  }
+}
+
+async function apiPost(path, body) {
+  const r = await fetch(API + path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (r.status === 401) {
+    handleAuthError(r.status);
+    throw new Error('Требуется вход');
+  }
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ error: r.statusText }));
+    throw new Error(err.error || r.statusText);
+  }
+  return r.json();
+}
+
+async function checkAuthStatus() {
+  try {
+    const r = await fetch(API + '/api/auth/status');
+    const d = await r.json();
+    setAuthState(Boolean(d.authenticated), d.email || '');
+    return Boolean(d.authenticated);
+  } catch {
+    setAuthState(false);
+    setStatus('auth-status', 'Не удалось проверить авторизацию', 'err');
+    return false;
+  }
+}
+
+async function loginUser() {
+  const email = document.getElementById('auth-email').value.trim();
+  const password = document.getElementById('auth-password').value;
+
+  if (!email || !password) {
+    setStatus('auth-status', 'Введите email и пароль', 'err');
+    return;
+  }
+
+  const btn = document.getElementById('auth-login-btn');
+  btn.disabled = true;
+  setStatus('auth-status', 'Выполняется вход...', 'loading');
+
+  try {
+    const r = await fetch(API + '/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ error: r.statusText }));
+      throw new Error(err.error || 'Ошибка входа');
+    }
+
+    const data = await r.json();
+    document.getElementById('auth-password').value = '';
+    clearStatus('auth-status');
+    setAuthState(true, data.email || email);
+    await initializeApp();
+  } catch (e) {
+    setStatus('auth-status', e.message, 'err');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function logoutUser() {
+  try {
+    await fetch(API + '/api/auth/logout', { method: 'POST' });
+  } finally {
+    setAuthState(false);
+  }
+}
+
+function toggleCase(idx) {
+  const body = document.getElementById('case-body-' + idx);
+  if (body) body.classList.toggle('open');
+}
+
+function scoreClass(actual, expected) {
+  if (actual == null) return 'score-na';
+  if (expected == null) return '';
+  return Math.abs(actual - expected) <= 1 ? 'score-match' : 'score-miss';
+}
+
+function typeBadge(type) {
+  return `<span class="case-type-badge type-${type}">${type}</span>`;
+}
+
+function getStoredRuns() {
+  return runsCache;
+}
+
+function setStoredRuns(runs) {
+  runsCache = runs.slice(0, RUNS_LIMIT);
+  fetch('/api/runs', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(runsCache),
+  }).catch(() => {});
+}
+
+function formatRunTime(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso || '—';
+  return d.toLocaleString('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
+
+function getActiveRun() {
+  return getStoredRuns().find((run) => run.id === activeRunId) || null;
+}
+
+function formatRub(value) {
+  return `${value.toFixed(2)}руб`;
+}
+
+function formatCost(usd, rub = null) {
+  const usdValue = Number(usd || 0);
+  if (usdValue <= 0) return '—';
+  const rubValue = rub != null ? Number(rub) : usdValue * Number(rublesInDollar || 0);
+  if (rubValue > 0) {
+    return `$${usdValue.toFixed(4)} (${formatRub(rubValue)})`;
+  }
+  return `$${usdValue.toFixed(4)}`;
+}
+
+function renderRunsList() {
+  const list = document.getElementById('runs-list');
+  const runs = getStoredRuns();
+
+  if (!runs.length) {
+    list.innerHTML = '<div style="font-size:13px;color:var(--muted)">Запусков пока нет</div>';
+    return;
+  }
+
+  list.innerHTML = runs.map((run) => {
+    const note = run.note ? ` · ${escHtml(run.note)}` : '';
+    const stageStr = (run.stages || []).join(' → ') || 'custom';
+    const cases = run.snapshot?.cases?.length || run.snapshot?.generate?.results?.length || 0;
+    const checked = run.snapshot?.cases?.filter(r => r.checked).length || run.snapshot?.batch?.results?.filter(r => r.evaluation).length || 0;
+    const totalCost = formatCost(run.total_cost_usd, run.total_cost_rub);
+    const activeCls = run.id === activeRunId ? ' active-run' : '';
+    return `
+      <div class="case-item${activeCls}">
+        <div class="case-header" onclick="restoreRun('${run.id}')">
+          <span class="case-summary"><b>${formatRunTime(run.created_at)}</b>${note}</span>
+          <span class="case-expected">${stageStr}</span>
+          <span class="case-score" style="color:var(--muted);font-size:12px;min-width:auto">кейсы: ${cases}, проверено: ${checked}, траты: ${totalCost}</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function saveRun(run) {
+  const runs = getStoredRuns();
+  runs.unshift(run);
+  setStoredRuns(runs);
+  renderRunsList();
+}
+
+function updateActiveRun(patch) {
+  if (!activeRunId) return;
+  const runs = getStoredRuns();
+  const idx = runs.findIndex((r) => r.id === activeRunId);
+  if (idx < 0) return;
+
+  const run = runs[idx];
+  const stages = Array.from(new Set([...(run.stages || []), ...(patch.stages || [])]));
+
+  runs[idx] = {
+    ...run,
+    ...patch,
+    stages,
+    input: { ...(run.input || {}), ...(patch.input || {}) },
+    snapshot: { ...(run.snapshot || {}), ...(patch.snapshot || {}) },
+  };
+  setStoredRuns(runs);
+  renderRunsList();
+}
+
+function hideGenerateAndBatchResults() {
+  generatedCases = [];
+  lastGenerateData = null;
+  lastBatchData = null;
+  lastEtalonCheck = null;
+  canGenerate = false;
+  canCheck = false;
+  document.getElementById('gen-btn').disabled = true;
+  document.getElementById('gen-and-check-btn').disabled = true;
+  document.getElementById('batch-btn').disabled = true;
+  renderCasesTable();
+}
+
+function renderFetchResult(data) {
+  if (!data) return;
+  const code = (data.parsed?.executable_code || '').trim();
+  const logs = (data.parsed?.logs || '').trim();
+  const hasCode = Boolean(code);
+  canGenerate = hasCode;
+  canCheck = hasCode || Boolean(logs);
+
+  const detailsBtn = document.getElementById('fetch-details-btn');
+  const resultsBtn = document.getElementById('fetch-results-btn');
+  const checkBtn = document.getElementById('fetch-check-btn');
+  const genBtn = document.getElementById('gen-btn');
+
+  detailsBtn.style.display = 'inline-flex';
+  resultsBtn.style.display = logs ? 'inline-flex' : 'none';
+  checkBtn.style.display = 'inline-flex';
+  renderFetchCheckButtonState();
+  genBtn.disabled = !hasCode;
+  const genAndCheckBtn = document.getElementById('gen-and-check-btn');
+  if (genAndCheckBtn) genAndCheckBtn.disabled = !hasCode;
+}
+
+function getStoredEtalonCheckForActiveRun() {
+  const activeRun = getActiveRun();
+  if (!activeRun) return null;
+  const etalon = activeRun.snapshot?.etalon_check || null;
+  if (!etalon || !etalon.checked || !etalon.evaluation) return null;
+  return etalon;
+}
+
+function renderFetchCheckButtonState() {
+  const checkBtn = document.getElementById('fetch-check-btn');
+  if (!checkBtn) return;
+  const etalon = lastEtalonCheck || getStoredEtalonCheckForActiveRun();
+  if (etalon && etalon.checked) {
+    checkBtn.textContent = 'Проверено';
+    checkBtn.className = 'btn btn-secondary mini-btn';
+    checkBtn.disabled = false;
+  } else {
+    checkBtn.textContent = 'Проверить';
+    checkBtn.className = 'btn btn-ok mini-btn';
+    checkBtn.disabled = !canCheck;
+  }
+}
+
+function getCheckModel() {
+  const batchModelEl = document.getElementById('batch-model');
+  if (batchModelEl && batchModelEl.value) return batchModelEl.value;
+  return document.getElementById('gen-model').value;
+}
+
+function buildEtalonCasePayload() {
+  return {
+    type: 'perfect_etalon',
+    expected_grade: 10,
+    change_summary: 'Эталонное решение',
+    student_code: lastFetchData?.parsed?.executable_code || '',
+  };
+}
+
+function openModal(title, content, options = {}) {
+  const copyBtn = document.getElementById('modal-copy-btn');
+  modalCopyText = options.copyText || '';
+  document.getElementById('modal-title').textContent = title;
+  document.getElementById('modal-body').textContent = content || '—';
+  copyBtn.style.display = modalCopyText ? 'inline-flex' : 'none';
+  copyBtn.textContent = 'Копировать';
+  document.getElementById('modal-overlay').style.display = 'flex';
+  document.body.classList.add('modal-open');
+}
+
+function closeModal(event) {
+  if (event && event.target !== event.currentTarget) return;
+  document.getElementById('modal-overlay').style.display = 'none';
+  document.body.classList.remove('modal-open');
+  modalCopyText = '';
+  const copyBtn = document.getElementById('modal-copy-btn');
+  copyBtn.style.display = 'none';
+  copyBtn.textContent = 'Копировать';
+}
+
+async function copyModalContent() {
+  const text = (modalCopyText || '').trim();
+  if (!text) return;
+
+  const copyBtn = document.getElementById('modal-copy-btn');
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.setAttribute('readonly', '');
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+    }
+    copyBtn.textContent = 'Скопировано';
+    setTimeout(() => {
+      if (document.getElementById('modal-overlay').style.display === 'flex') {
+        copyBtn.textContent = 'Копировать';
+      }
+    }, 1200);
+  } catch {
+    copyBtn.textContent = 'Ошибка';
+    setTimeout(() => {
+      if (document.getElementById('modal-overlay').style.display === 'flex') {
+        copyBtn.textContent = 'Копировать';
+      }
+    }, 1200);
+  }
+}
+
+async function copyLogContent() {
+  const text = (document.getElementById('logs-content')?.value || '').trim();
+  if (!text) return;
+  const copyBtn = document.getElementById('copy-log-btn');
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    copyBtn.textContent = 'Скопировано';
+    setTimeout(() => { copyBtn.textContent = 'Копировать'; }, 1200);
+  } catch {
+    copyBtn.textContent = 'Ошибка';
+    setTimeout(() => { copyBtn.textContent = 'Копировать'; }, 1200);
+  }
+}
+
+function openFetchCodeModal() {
+  const code = lastFetchData?.parsed?.executable_code?.trim();
+  openModal('Исполняемый код эталона', code || 'Исполняемый код не найден', { copyText: code || '' });
+}
+
+function openFetchResultsModal() {
+  const logs = lastFetchData?.parsed?.logs?.trim();
+  openModal('Результаты выполнения эталона', logs || 'Результаты отсутствуют');
+}
+
+function openEtalonCheckModal() {
+  const etalon = lastEtalonCheck || getStoredEtalonCheckForActiveRun();
+  if (!etalon || !etalon.evaluation) {
+    setStatus('fetch-status', 'Эталон еще не проверен', 'info');
+    return;
+  }
+  const text = etalon.curator_text || formatCuratorText(etalon.evaluation);
+  openModal('Результаты проверки эталона', text, { copyText: text });
+}
+
+async function runEtalonCheck(force = false) {
+  const hasContent = lastFetchData?.parsed?.executable_code || lastFetchData?.parsed?.logs;
+  if (!hasContent) {
+    setStatus('fetch-status', 'Сначала считайте эталон', 'err');
+    return null;
+  }
+
+  const cached = !force ? (lastEtalonCheck || getStoredEtalonCheckForActiveRun()) : null;
+  if (cached && cached.checked && cached.evaluation) {
+    lastEtalonCheck = cached;
+    renderFetchCheckButtonState();
+    return cached;
+  }
+
+  const tema = document.getElementById('gen-tema').value.trim();
+  const zadanieValues = getZadanieValues();
+  const zadanie = zadanieValues[0] || '';
+  if (!tema || !zadanie) {
+    setStatus('fetch-status', 'Заполните тему и текст задания перед проверкой', 'err');
+    return null;
+  }
+
+  const checkBtn = document.getElementById('fetch-check-btn');
+  checkBtn.disabled = true;
+  checkBtn.textContent = 'Проверяю...';
+  setStatus('fetch-status', '⏳ Проверяю эталон...', 'loading');
+
+  try {
+    const payload = {
+      cases: [buildEtalonCasePayload()],
+      tema,
+      zadanie,
+      model: getCheckModel(),
+      execution_logs: lastFetchData?.parsed?.logs || '',
+      assignment_type: getAssignmentType(),
+    };
+    const data = await apiPost('/api/run-batch-check', payload);
+    const result = (data.results || [])[0] || null;
+    if (!result || !result.evaluation) {
+      throw new Error(result?.error || 'Не удалось получить результат проверки эталона');
+    }
+
+    const etalonCheck = {
+      checked: true,
+      evaluation: result.evaluation,
+      curator_text: result.curator_text || '—',
+      cost_usd: result.cost_usd || 0,
+      cost_rub: result.cost_rub || 0,
+      checked_at: new Date().toISOString(),
+      model: payload.model,
+    };
+
+    lastEtalonCheck = etalonCheck;
+    const activeRun = getActiveRun();
+    updateActiveRun({
+      stages: ['batch'],
+      snapshot: { etalon_check: etalonCheck },
+      total_cost_usd: (activeRun?.total_cost_usd || 0) + (result.cost_usd || 0),
+      total_cost_rub: (activeRun?.total_cost_rub || 0) + (result.cost_rub || 0),
+    });
+    renderFetchCheckButtonState();
+    setStatus('fetch-status', `✓ Эталон проверен: ${result.evaluation?.overall_score ?? '—'} · стоимость ${formatCost(result.cost_usd, result.cost_rub)}`, 'ok');
+    return etalonCheck;
+  } catch (e) {
+    setStatus('fetch-status', '✗ ' + e.message, 'err');
+    renderFetchCheckButtonState();
+    return null;
+  }
+}
+
+async function handleFetchCheckButtonClick() {
+  const etalon = lastEtalonCheck || getStoredEtalonCheckForActiveRun();
+  if (etalon && etalon.checked) {
+    openEtalonCheckModal();
+    return;
+  }
+  const result = await runEtalonCheck(false);
+  if (result?.checked) {
+    openEtalonCheckModal();
+  }
+}
+
+function formatCuratorText(ev) {
+  // Formatting is now done on the backend; this is a no-op fallback.
+  if (!ev) return '—';
+  return ev.overall_comment || '—';
+}
+
+function prepareGeneratedCases(results) {
+  generatedCases = (results || []).map((item, index) => ({
+    ...item,
+    row_index: index,
+    checked: Boolean(item.checked),
+    evaluation: item.evaluation || null,
+    curator_text: item.curator_text || '',
+    cost_rub: item.cost_rub || 0,
+  }));
+  document.getElementById('gen-count').textContent = generatedCases.length;
+  document.getElementById('batch-btn').disabled = generatedCases.length === 0;
+}
+
+function renderCasesTable() {
+  const tbody = document.getElementById('gen-cases-tbody');
+  tbody.innerHTML = generatedCases.map((item, index) => {
+    const fact = item.evaluation?.overall_score;
+    const factClass = fact == null ? 'cell-muted' : fact >= 8 ? 'fact-pill ok' : fact >= 5 ? 'fact-pill warn' : 'fact-pill err';
+    return `
+      <tr>
+        <td>
+          <span class="case-type-badge type-${item.type || 'unknown'}">${item.type || 'unknown'}</span>${item.type !== 'perfect_etalon' ? ` <button class="icon-btn" title="Перегенерировать с новым описанием" onclick="openRegenForm(${index})">🔄</button>` : ''}
+        </td>
+        <td class="summary-cell">${escHtml(item.change_summary || '')}</td>
+        <td><span class="fact-pill">${item.expected_grade ?? '—'}</span></td>
+        <td>${fact == null ? '<span class="cell-muted">—</span>' : `<span class="${factClass}">${fact}</span>`}</td>
+        <td style="white-space:nowrap">
+          <button class="btn btn-secondary mini-btn" onclick="openCaseCode(${index})">Код</button>
+          ${item.execution_logs ? `<button class="btn btn-secondary mini-btn" style="margin-left:4px" onclick="openCaseLogs(${index})">Логи</button>` : ''}
+        </td>
+        <td>
+          <button class="btn btn-ok mini-btn" id="case-check-btn-${index}" onclick="checkGeneratedCase(${index})" ${item.checked ? 'disabled' : ''}>Проверить</button>
+        </td>
+        <td>
+          ${item.checked ? `<button class="icon-btn" onclick="openCaseResult(${index})" title="Результаты проверки">✍</button>` : '<span class="cell-muted">—</span>'}
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  // gen-result is always visible; no need to toggle display
+  updateBatchControls();
+}
+
+function updateBatchControls() {
+  const hasCases = generatedCases.length > 0;
+  const remaining = generatedCases.some((item) => !item.checked);
+  const anyChecked = generatedCases.some((item) => item.checked);
+  document.getElementById('batch-btn').disabled = !hasCases || !remaining || !canGenerate;
+  document.getElementById('xls-btn').disabled = !anyChecked;
+}
+
+function openCaseCode(index) {
+  const item = generatedCases[index];
+  const code = (item.student_code || '').trim();
+  openModal(`Код: ${item.type || 'case'}`, code || 'Код не найден', { copyText: code || '' });
+}
+
+function openCaseLogs(index) {
+  const item = generatedCases[index];
+  const logs = (item.execution_logs || '').trim();
+  openModal(`Логи: ${item.type || 'case'}`, logs || 'Логи не найдены', { copyText: logs || '' });
+}
+
+function openCaseResult(index) {
+  const item = generatedCases[index];
+  const text = item.curator_text || formatCuratorText(item.evaluation);
+  openModal(`Результаты проверки: ${item.type || 'case'}`, text, { copyText: text });
+}
+
+// ── Regenerate case form ──────────────────────────────────────────────────────
+
+let _regenIndex = null;
+
+function openRegenForm(index) {
+  const item = generatedCases[index];
+  _regenIndex = index;
+  document.getElementById('regen-title').textContent = `Перегенерировать: ${item.type}`;
+  document.getElementById('regen-desc').value = item.change_summary || '';
+  document.getElementById('regen-status').textContent = '';
+  document.getElementById('regen-submit-btn').disabled = false;
+  document.getElementById('regen-overlay').style.display = 'flex';
+  setTimeout(() => document.getElementById('regen-desc').focus(), 50);
+}
+
+function closeRegenForm(e) {
+  if (e && e.target !== document.getElementById('regen-overlay')) return;
+  document.getElementById('regen-overlay').style.display = 'none';
+  _regenIndex = null;
+}
+
+async function submitRegenerate() {
+  const index = _regenIndex;
+  if (index === null) return;
+  const item = generatedCases[index];
+  const desc = document.getElementById('regen-desc').value.trim();
+  const statusEl = document.getElementById('regen-status');
+  const btn = document.getElementById('regen-submit-btn');
+
+  const url = document.getElementById('fetch-url').value.trim();
+  const tema = generatedTema;
+  const zadanie = generatedZadanie;
+  const model = document.getElementById('gen-model').value;
+
+  if (!desc) { statusEl.textContent = 'Введите описание изменения'; statusEl.style.color = 'var(--err)'; return; }
+
+  btn.disabled = true;
+  statusEl.style.color = 'var(--text-secondary)';
+  statusEl.textContent = '⏳ Генерирую...';
+
+  try {
+    const result = await apiPost('/api/regenerate-case', {
+      etalon_link: url,
+      tema,
+      zadanie,
+      case_type: item.type,
+      custom_desc: desc,
+      model,
+    });
+
+    // Update case in array, reset checked state so Проверить becomes active
+    generatedCases[index] = {
+      ...generatedCases[index],
+      student_code: result.student_code,
+      expected_grade: result.expected_grade,
+      change_summary: result.change_summary,
+      checked: false,
+      evaluation: null,
+      curator_text: null,
+      error: null,
+    };
+
+    statusEl.style.color = 'var(--ok)';
+    statusEl.textContent = `✓ Готово (${result.total_tokens} токенов, ${formatCost(result.total_cost_usd, result.total_cost_rub)})`;
+    btn.disabled = false;
+
+    renderCasesTable();
+
+    // Close form after short delay so user sees success message
+    setTimeout(() => {
+      document.getElementById('regen-overlay').style.display = 'none';
+      _regenIndex = null;
+    }, 1200);
+
+  } catch (e) {
+    statusEl.style.color = 'var(--err)';
+    statusEl.textContent = '✗ ' + (e.message || String(e));
+    btn.disabled = false;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function checkCasesByIndices(indices) {
+  const uniqueIndices = Array.from(new Set(indices)).filter((index) => generatedCases[index] && !generatedCases[index].checked);
+  if (!uniqueIndices.length) return null;
+
+  const cachedEtalon = lastEtalonCheck || getStoredEtalonCheckForActiveRun();
+  const filteredIndices = [];
+  uniqueIndices.forEach((index) => {
+    const item = generatedCases[index];
+    if (item?.type === 'perfect_etalon' && cachedEtalon?.checked && cachedEtalon?.evaluation) {
+      generatedCases[index] = {
+        ...generatedCases[index],
+        checked: true,
+        evaluation: cachedEtalon.evaluation,
+        curator_text: cachedEtalon.curator_text || formatCuratorText(cachedEtalon.evaluation),
+        error: null,
+        cost_usd: cachedEtalon.cost_usd || 0,
+        cost_rub: cachedEtalon.cost_rub || 0,
+      };
+      return;
+    }
+    filteredIndices.push(index);
+  });
+
+  if (!filteredIndices.length) {
+    const checkedCount = generatedCases.filter((item) => item.checked).length;
+    renderCasesTable();
+    updateActiveRun({
+      stages: ['batch'],
+      snapshot: { cases: generatedCases },
+    });
+    setStatus('batch-status', `✓ Проверено ${checkedCount}/${generatedCases.length} (эталон взят из сохраненной проверки)`, 'ok');
+    return { results: [], reused_etalon: true };
+  }
+
+  const tema = document.getElementById('gen-tema').value.trim();
+  const zadanieValues = getZadanieValues();
+  const zadanie = zadanieValues[0] || '';
+  const model = document.getElementById('batch-model').value;
+
+  setStatus('batch-status', `⏳ Проверяю ${filteredIndices.length} кейсов...`, 'loading');
+
+  const payloadCases = filteredIndices.map((index) => ({
+    ...generatedCases[index],
+    original_index: index,
+  }));
+
+  // For multi-zadanie: run batch for each zadanie and merge
+  const allZadanie = zadanieValues.length > 1 ? zadanieValues : [zadanie];
+  const isMultiZadanie = allZadanie.length > 1;
+
+  try {
+    let combinedResults;
+    if (!isMultiZadanie) {
+      const data = await apiPost('/api/run-batch-check', {
+        cases: payloadCases,
+        tema,
+        zadanie,
+        model,
+        execution_logs: lastFetchData?.parsed?.logs || '',
+        assignment_type: getAssignmentType(),
+      });
+      combinedResults = { data, perZadanie: null };
+    } else {
+      // Run for each zadanie and collect per-zadanie evaluations
+      const perZadanieResults = [];
+      let totalCostUsd = 0;
+      let totalCostRub = 0;
+      for (let zi = 0; zi < allZadanie.length; zi++) {
+        const zData = await apiPost('/api/run-batch-check', {
+          cases: payloadCases,
+          tema,
+          zadanie: allZadanie[zi],
+          model,
+          execution_logs: lastFetchData?.parsed?.logs || '',
+          assignment_type: getAssignmentType(),
+        });
+        perZadanieResults.push(zData.results || []);
+        totalCostUsd += zData.total_cost_usd || 0;
+        totalCostRub += zData.total_cost_rub || 0;
+      }
+      // Merge: store per-zadanie evaluations in each result
+      const mergedResults = (perZadanieResults[0] || []).map((firstResult, subIdx) => {
+        const perZ = allZadanie.map((_, zi) => perZadanieResults[zi][subIdx] || {});
+        return {
+          ...firstResult,
+          per_zadanie: perZ.map((r, zi) => ({
+            zadanie_num: zi + 1,
+            evaluation: r.evaluation || null,
+            curator_text: r.curator_text || null,
+            error: r.error || null,
+          })),
+        };
+      });
+      combinedResults = {
+        data: { results: mergedResults, total_cost_usd: totalCostUsd, total_cost_rub: totalCostRub },
+        perZadanie: allZadanie,
+      };
+    }
+
+    const { data, perZadanie } = combinedResults;
+    const results = data.results || [];
+    results.forEach((result, subsetIndex) => {
+      const originalIndex = filteredIndices[subsetIndex];
+      const evaluation = result.evaluation || null;
+      let curatorText;
+      if (perZadanie && result.per_zadanie) {
+        curatorText = result.per_zadanie.map((pz) =>
+          `=== Задание ${pz.zadanie_num} ===\n` + (pz.curator_text || pz.error || '—')
+        ).join('\n\n');
+      } else {
+        curatorText = result.curator_text || result.error || '—';
+      }
+      generatedCases[originalIndex] = {
+        ...generatedCases[originalIndex],
+        checked: Boolean(evaluation || (result.per_zadanie && result.per_zadanie.some(pz => pz.evaluation))),
+        evaluation,
+        per_zadanie: result.per_zadanie || null,
+        curator_text: curatorText,
+        error: result.error || null,
+        cost_usd: result.cost_usd || 0.0,
+        cost_rub: result.cost_rub || 0.0,
+      };
+    });
+
+    const checkedCount = generatedCases.filter((item) => item.checked).length;
+    const batchCostUsd = data.total_cost_usd || 0.0;
+    const batchCostRub = data.total_cost_rub || 0.0;
+    const activeRun = getActiveRun();
+    renderCasesTable();
+    updateActiveRun({
+      stages: ['batch'],
+      snapshot: { cases: generatedCases, batch: data },
+      total_cost_usd: (activeRun?.total_cost_usd || 0.0) + batchCostUsd,
+      total_cost_rub: (activeRun?.total_cost_rub || 0.0) + batchCostRub,
+    });
+    const costStr = batchCostUsd > 0 ? ` · стоимость проверки ${formatCost(batchCostUsd, batchCostRub)}` : '';
+    document.getElementById('batch-status').textContent = `✓ Проверено ${results.length} кейсов, всего проверено ${checkedCount}/${generatedCases.length}${costStr}`;
+    document.getElementById('batch-status').className = 'status-bar ok';
+    return data;
+  } catch (e) {
+    setStatus('batch-status', '✗ ' + e.message, 'err');
+    return null;
+  }
+}
+
+async function checkGeneratedCase(index) {
+  const btn = document.getElementById(`case-check-btn-${index}`);
+  if (btn) btn.disabled = true;
+  return checkCasesByIndices([index]);
+}
+
+async function checkRemainingCases() {
+  const batchBtn = document.getElementById('batch-btn');
+  if (batchBtn) batchBtn.disabled = true;
+  const remaining = generatedCases
+    .map((item, index) => (!item.checked ? index : null))
+    .filter((value) => value != null);
+  return checkCasesByIndices(remaining);
+}
+
+async function generateAndCheck() {
+  const genAndCheckBtn = document.getElementById('gen-and-check-btn');
+  const genBtn = document.getElementById('gen-btn');
+  if (genAndCheckBtn) genAndCheckBtn.disabled = true;
+  if (genBtn) genBtn.disabled = true;
+  const result = await generateCases();
+  if (result) {
+    await checkRemainingCases();
+  }
+  if (genAndCheckBtn) genAndCheckBtn.disabled = false;
+  if (genBtn) genBtn.disabled = !canGenerate;
+}
+
+function restoreRun(runId) {
+  const run = getStoredRuns().find((x) => x.id === runId);
+  if (!run) {
+    setStatus('runs-status', 'Не удалось найти запуск', 'err');
+    return;
+  }
+
+  activeRunId = run.id;
+
+  const input = run.input || {};
+  if (input.url != null) document.getElementById('fetch-url').value = input.url;
+  if (input.tema != null) document.getElementById('gen-tema').value = input.tema;
+  if (input.zadanie_list != null && Array.isArray(input.zadanie_list)) {
+    setZadanieValues(input.zadanie_list);
+  } else if (input.zadanie != null) {
+    setZadanieValues([input.zadanie]);
+  }
+  if (input.note != null) document.getElementById('run-note').value = input.note;
+
+  lastFetchData = run.snapshot?.fetch || null;
+  lastGenerateData = run.snapshot?.generate || null;
+  lastBatchData = run.snapshot?.batch || null;
+
+  if (lastFetchData) renderFetchResult(lastFetchData);
+  if (run.snapshot?.cases?.length) {
+    prepareGeneratedCases(run.snapshot.cases);
+    renderCasesTable();
+  } else if (lastGenerateData?.results?.length) {
+    prepareGeneratedCases(lastGenerateData.results);
+    renderCasesTable();
+  } else {
+    generatedCases = [];
+    document.getElementById('gen-count').textContent = '0';
+    updateBatchControls();
+  }
+
+  if (!lastFetchData) {
+    document.getElementById('fetch-details-btn').style.display = 'none';
+    document.getElementById('fetch-results-btn').style.display = 'none';
+    document.getElementById('fetch-check-btn').style.display = 'none';
+    clearStatus('fetch-status');
+  }
+
+  lastEtalonCheck = run.snapshot?.etalon_check || null;
+  renderFetchCheckButtonState();
+
+  renderRunsList();
+  switchTab('run');
+  setStatus('runs-status', `✓ Загружен запуск: ${formatRunTime(run.created_at)}`, 'info');
+}
+
+// ── prompts ───────────────────────────────────────────────────────────────
+async function loadPrompts() {
+  const grid = document.getElementById('prompts-grid');
+  grid.innerHTML = '<div style="display:flex;justify-content:center"><div class="spinner" style="display:inline-block;margin:20px"></div></div>';
+  
+  try {
+    const r = await fetch(API + '/api/prompts');
+    if (r.status === 401) {
+      handleAuthError(r.status);
+      throw new Error('Требуется вход');
+    }
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    
+    // Render system prompts
+    const prompts = data.prompts || {};
+    const promptCards = Object.entries(prompts).map(([key, prompt]) => `
+      <div class="prompt-card">
+        <h4>${prompt.title}</h4>
+        <span class="prompt-type">${prompt.type}</span>
+        <div class="prompt-desc">${escHtml(prompt.description)}</div>
+        <div class="prompt-content">${escHtml(prompt.content || '')}</div>
+        <button class="btn btn-secondary mini-btn prompt-copy-btn" onclick="copyPromptText('${key}')">Скопировать полный текст</button>
+      </div>
+    `).join('');
+    
+    // Render error types
+    const errorTypes = data.error_types || [];
+    const errorCards = errorTypes.map((et) => `
+      <div class="error-type-card">
+        <div class="type-name">${escHtml(et.type)}</div>
+        <div class="type-desc">${escHtml(et.description)}</div>
+      </div>
+    `).join('');
+    
+    grid.innerHTML = `
+      <div class="card">
+        <h3 style="margin-bottom:12px">Системные промпты</h3>
+      </div>
+      ${promptCards}
+      <div class="card">
+        <h3 style="margin-bottom:12px">Типы ошибок</h3>
+      </div>
+      <div class="error-types-grid">${errorCards}</div>
+    `;
+    
+    clearStatus('prompts-status');
+  } catch (e) {
+    grid.innerHTML = `<div style="grid-column:1/-1"><div style="color:var(--err);padding:20px">${escHtml(e.message)}</div></div>`;
+    setStatus('prompts-status', '✗ Не удалось загрузить промпты: ' + e.message, 'err');
+  }
+}
+
+function copyPromptText(promptKey) {
+  // Store full prompt for copying
+  const fullPrompts = {};
+  fetch(API + '/api/prompts').then(r => {
+    if (r.status === 401) {
+      handleAuthError(r.status);
+      throw new Error('Требуется вход');
+    }
+    return r.json();
+  }).then(data => {
+    const prompt = data.prompts[promptKey];
+    if (prompt && navigator.clipboard) {
+      navigator.clipboard.writeText(prompt.content).then(() => {
+        alert('Промпт скопирован в буфер обмена');
+      });
+    }
+  });
+}
+
+// ── health ────────────────────────────────────────────────────────────────
+async function checkHealth() {
+  try {
+    const r = await fetch(API + '/api/health');
+    const d = await r.json();
+    rublesInDollar = Number(d.rubles_in_dollar || 0);
+    const el = document.getElementById('health-badge');
+    el.style.color = '#22c55e';
+    el.textContent = `● server ok${d.openai_key_present ? ' · key ✓' : ' · key ✗'}`;
+  } catch {
+    document.getElementById('health-badge').textContent = '● offline';
+  }
+}
+
+let appInitialized = false;
+async function initializeApp() {
+  if (appInitialized || !isAuthenticated) return;
+  await checkHealth();
+  initGenerationForm();
+  try {
+    const res = await fetch('/api/runs');
+    if (res.ok) runsCache = await res.json();
+  } catch (_) {}
+  refreshGenerationLogs();
+  renderRunsList();
+  switchTab('run');
+  appInitialized = true;
+}
+
+async function bootstrapAuth() {
+  await checkHealth();
+  const ok = await checkAuthStatus();
+  if (ok) {
+    await initializeApp();
+  }
+}
+
+bootstrapAuth();
+
+// ── TAB 1: FETCH ─────────────────────────────────────────────────────────
+async function fetchColab() {
+  const url = document.getElementById('fetch-url').value.trim();
+  const note = document.getElementById('run-note').value.trim();
+  if (!url) { setStatus('fetch-status', 'Введите ссылку на Colab', 'err'); return null; }
+  
+  setStatus('fetch-status', '⏳ Загружаю и парсю...', 'loading');
+  document.getElementById('fetch-details-btn').style.display = 'none';
+  document.getElementById('fetch-results-btn').style.display = 'none';
+  document.getElementById('fetch-check-btn').style.display = 'none';
+
+  try {
+    const data = await apiPost('/api/fetch-colab', { url, assignment_type: getAssignmentType() });
+
+    const run = {
+      id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      created_at: new Date().toISOString(),
+      note,
+      total_cost_usd: 0,
+      total_cost_rub: 0,
+      stages: ['fetch'],
+      input: {
+        note,
+        url,
+        tema: document.getElementById('gen-tema').value.trim(),
+        zadanie: (getZadanieValues()[0] || ''),
+        zadanie_list: getZadanieValues(),
+      },
+      snapshot: {
+        fetch: data,
+        cases: [],
+        etalon_check: null,
+      },
+    };
+    activeRunId = run.id;
+    saveRun(run);
+
+    lastFetchData = data;
+    hideGenerateAndBatchResults();
+    renderFetchResult(data);
+    const codeLen = (data.parsed?.executable_code || '').length;
+    const logsLen = (data.parsed?.logs || '').length;
+    const contentDesc = codeLen > 0 ? `${codeLen} символов кода` : `${logsLen} символов текста`;
+    setStatus('fetch-status', `✓ Загружено (${contentDesc}), создан новый запуск`, 'ok');
+    setStatus('runs-status', `Активный запуск: ${formatRunTime(run.created_at)}`, 'info');
+    return data;
+  } catch (e) {
+    setStatus('fetch-status', '✗ ' + e.message, 'err');
+    document.getElementById('fetch-details-btn').style.display = 'none';
+    document.getElementById('fetch-results-btn').style.display = 'none';
+    document.getElementById('fetch-check-btn').style.display = 'none';
+    return null;
+  }
+}
+
+// ── TAB 2: GENERATE ───────────────────────────────────────────────────────
+async function generateCases() {
+  if (!activeRunId) {
+    setStatus('gen-status', 'Сначала считайте эталон, чтобы создать запуск', 'err');
+    return null;
+  }
+
+  const url = document.getElementById('fetch-url').value.trim();
+  const tema = document.getElementById('gen-tema').value.trim();
+  const zadanieValues = getZadanieValues();
+  const zadanie = zadanieValues[0] || '';
+  const numCorrect = parseInt(document.getElementById('gen-correct').value) || 0;
+  const numIncorrect = parseInt(document.getElementById('gen-incorrect').value) || 0;
+  const model = document.getElementById('gen-model').value;
+
+  if (!url || !tema || !zadanie) {
+    setStatus('gen-status', 'Заполните все поля', 'err');
+    return null;
+  }
+
+  const enabledTypes = Array.from(
+    document.querySelectorAll('#error-types input:checked')
+  ).map(el => el.value);
+
+  setStatus('gen-status', `⏳ Генерирую ${numCorrect} корр. + ${numIncorrect} некорр. кейсов...`, 'loading');
+
+  const startTime = Date.now();
+  const timerInterval = setInterval(() => {
+    const elapsed = Math.round((Date.now() - startTime) / 1000);
+    setStatus('gen-status', `⏳ Генерирую ${numCorrect} корр. + ${numIncorrect} некорр. кейсов... (${elapsed}с)`, 'loading');
+  }, 1000);
+
+  try {
+    const data = await apiPost('/api/generate-cases', {
+      etalon_link: url,
+      tema,
+      zadanie,
+      num_correct: numCorrect,
+      num_incorrect: numIncorrect,
+      model,
+      enabled_types: enabledTypes,
+      assignment_type: getAssignmentType(),
+    });
+
+    clearInterval(timerInterval);
+    prepareGeneratedCases(data.results || []);
+    generatedTema = tema;
+    generatedZadanie = zadanie;
+    generatedZadanies = zadanieValues;
+    lastGenerateData = data;
+
+    if (data.generation_id) {
+      document.getElementById('logs-gen-id').value = data.generation_id;
+      document.getElementById('last-generation-id').textContent = data.generation_id;
+    }
+
+    updateActiveRun({
+      stages: ['generate'],
+      input: { tema, zadanie, zadanie_list: zadanieValues, url },
+      snapshot: { generate: data, cases: generatedCases },
+      total_cost_usd: (data.total_cost_usd || 0.0),
+      total_cost_rub: (data.total_cost_rub || 0.0),
+    });
+
+    renderCasesTable();
+    setStatus('gen-status', `✓ Сгенерировано ${generatedCases.length} кейсов (токены: ${data.total_tokens || 0}, стоимость: ${formatCost(data.total_cost_usd, data.total_cost_rub)}, id: ${data.generation_id || '—'})`, 'ok');
+    refreshGenerationLogs();
+    return data;
+  } catch (e) {
+    clearInterval(timerInterval);
+    const elapsed = Math.round((Date.now() - startTime) / 1000);
+    const rawMsg = e.message || String(e);
+    console.error('[generateCases] Ошибка после', elapsed + 'с:', e);
+    let displayMsg;
+    if (rawMsg === 'Failed to fetch' || rawMsg.toLowerCase().includes('networkerror') || rawMsg.toLowerCase().includes('failed to fetch')) {
+      displayMsg = `Сервер недоступен или соединение прервано (через ${elapsed}с). Проверьте что сервер запущен на порту 5001. Откройте DevTools → Console для деталей.`;
+    } else {
+      displayMsg = `${rawMsg} (через ${elapsed}с)`;
+    }
+    setStatus('gen-status', '✗ ' + displayMsg, 'err');
+    return null;
+  }
+}
+
+async function refreshGenerationLogs() {
+  try {
+    const runsList = document.getElementById('logs-runs-list');
+    const runs = getStoredRuns();
+    
+    if (!runs.length) {
+      runsList.innerHTML = '<div style="font-size:13px;color:var(--muted)">Запусков пока нет</div>';
+      return;
+    }
+
+    runsList.innerHTML = runs.slice(0, 30).map((run) => {
+      const note = run.note ? ` · ${escHtml(run.note)}` : '';
+      const genId = run.snapshot?.generate?.generation_id || run.snapshot?.batch?.generation_id || '—';
+      const totalCost = formatCost(run.total_cost_usd, run.total_cost_rub);
+      return `
+        <div style="cursor:pointer;padding:8px;border-radius:6px;margin-bottom:6px;background:var(--surface2);border:1px solid var(--border);transition:all .15s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'" onclick="selectRunForLogs('${run.id}')">
+          <div style="font-size:11px;color:var(--accent2)">${formatRunTime(run.created_at)}</div>
+          <div style="font-size:12px;margin-top:2px">${note || '(без названия)'}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px">${totalCost}</div>
+          <div class="logs-item-run-title">${genId !== '—' ? genId.substring(0, 12) + '…' : '—'}</div>
+        </div>
+      `;
+    }).join('');
+  } catch (e) {
+    setStatus('logs-status', '✗ Ошибка: ' + e.message, 'err');
+  }
+}
+
+function selectRunForLogs(runId) {
+  const run = getStoredRuns().find((r) => r.id === runId);
+  if (!run) return;
+  
+  if (run.snapshot?.generate?.generation_id) {
+    document.getElementById('logs-gen-id').value = run.snapshot.generate.generation_id;
+    loadGenerationLog();
+  } else if (run.snapshot?.batch?.generation_id) {
+    document.getElementById('logs-gen-id').value = run.snapshot.batch.generation_id;
+    loadGenerationLog();
+  } else {
+    setStatus('logs-status', 'В этом запуске нет сгенерированных кейсов — сначала запустите генерацию', 'info');
+  }
+}
+
+async function openGenerationLogById(id) {
+  document.getElementById('logs-gen-id').value = id;
+  await loadGenerationLog();
+}
+
+async function loadGenerationLog() {
+  const id = document.getElementById('logs-gen-id').value.trim();
+  if (!id) {
+    setStatus('logs-status', 'Введите generation_id', 'err');
+    return;
+  }
+
+  setStatus('logs-status', '⏳ Загружаю лог...', 'loading');
+  try {
+    const r = await fetch(API + '/api/generation-logs/' + encodeURIComponent(id));
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ error: r.statusText }));
+      throw new Error(err.error || r.statusText);
+    }
+    const text = await r.text();
+    document.getElementById('logs-content').value = text;
+    document.getElementById('copy-log-btn').style.display = 'inline-flex';
+    setStatus('logs-status', '✓ Лог загружен', 'ok');
+  } catch (e) {
+    setStatus('logs-status', '✗ ' + e.message, 'err');
+  }
+}
+
+// ── TAB 4: BATCH ──────────────────────────────────────────────────────────
+async function runBatchCheck() {
+  return checkRemainingCases();
+}
+
+function downloadXls() {
+  if (!window.XLSX) { alert('Библиотека XLSX не загружена'); return; }
+
+  const header = ['Тема', '', '', '', 'Решение', 'Ожид. оц', 'Факт. оц', 'Код', 'Ответ GPT (AI Feedback)'];
+
+  const dataRows = generatedCases.map((item) => [
+    generatedTema || '',
+    '',
+    '',
+    '',
+    item.change_summary || '',
+    item.expected_grade ?? '',
+    item.evaluation?.overall_score ?? '',
+    item.type === 'perfect_etalon' ? '' : (item.student_code || ''),
+    item.curator_text || item.evaluation?.overall_comment || '',
+  ]);
+
+  const wsData = [
+    header,
+    ...dataRows,
+    [],
+    ['ОБЩИЙ TASK DEFINITION:'],
+    [generatedZadanie || ''],
+  ];
+  if (generatedZadanies && generatedZadanies.length > 1) {
+    generatedZadanies.forEach((z, i) => {
+      wsData.push([`Задание ${i + 1}:`, z]);
+    });
+  }
+
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+  ws['!cols'] = [
+    { wch: 35 }, { wch: 8 }, { wch: 8 }, { wch: 8 },
+    { wch: 55 }, { wch: 12 }, { wch: 12 }, { wch: 80 }, { wch: 90 },
+  ];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Результаты');
+
+  const now = new Date();
+  const ts = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`;
+  XLSX.writeFile(wb, `check_results_${ts}.xlsx`);
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+</body>
+</html>
