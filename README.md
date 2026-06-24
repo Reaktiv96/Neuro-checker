@@ -1,4 +1,4 @@
-# Neuro Checking - AI Homework Assessment System
+# Neuro Checking - AI Homework Assessment System  
 
 Веб-приложение для автоматической проверки и генерации вариантов домашних заданий с использованием AI.
 
